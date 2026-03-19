@@ -1,0 +1,76 @@
+@import "tailwindcss";
+/* Tailwind v4 ignores workspace package sources unless they are registered explicitly. */
+@source "../../../packages/ui/src";
+
+@theme {
+  --color-midnight: #120f19;
+  --color-parchment: #f5e7d0;
+  --color-haze: #f7eee1;
+  --color-brass: #dca85f;
+  --color-plum: #2c2033;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-body:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-width: 380px;
+    background: var(--color-midnight);
+  }
+
+  body {
+    margin: 0;
+    min-width: 380px;
+    min-height: 520px;
+    color: var(--color-parchment);
+    font-family: var(--font-body);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    color: var(--color-midnight);
+    background: var(--color-parchment);
+  }
+
+  #root {
+    min-width: 380px;
+    min-height: 520px;
+  }
+}
+
+@keyframes snag-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -8px, 0);
+  }
+}
