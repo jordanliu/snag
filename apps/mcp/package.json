@@ -1,0 +1,24 @@
+{
+  "name": "mcp",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prestart": "pnpm run build",
+    "start": "node dist/index.js",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.1",
+    "@repo/dom-bridge": "workspace:*",
+    "zod": "^4.1.12",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^24.5.2",
+    "@types/ws": "^8.18.1",
+    "typescript": "5.9.2"
+  }
+}

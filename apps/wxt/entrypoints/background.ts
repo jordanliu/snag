@@ -1,11 +1,5 @@
-export default defineBackground(() => {
-  browser.runtime.onInstalled.addListener((details) => {
-    if (details.reason !== "install") {
-      return;
-    }
+import { startBridgeController } from "../lib/background/bridge-controller";
 
-    void browser.storage.local.set({
-      selectorEnabled: false,
-    });
-  });
+export default defineBackground(() => {
+  startBridgeController();
 });

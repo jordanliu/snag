@@ -1,56 +1,60 @@
 import { useEffect, useState } from "react";
 import { Button } from "@repo/ui/button";
 import {
-  getSelectorEnabled,
-  SELECTOR_ENABLED_KEY,
-  setSelectorEnabled,
-} from "../../lib/selector-mode";
-
-type StorageChangeMap = Record<
-  string,
-  {
-    oldValue?: unknown;
-    newValue?: unknown;
-  }
->;
+  disableSelectorMode,
+  enableSelectorMode,
+  loadSelectorModeState,
+  subscribeToSelectorModeState,
+  type SelectorModeState,
+} from "../../lib/popup/selector-mode-service";
 
 function App() {
-  const [enabled, setEnabled] = useState(false);
+  const [selectorModeState, setSelectorModeState] = useState<SelectorModeState>({
+    enabled: false,
+    bridgeConnected: false,
+  });
   const [isSaving, setIsSaving] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    void getSelectorEnabled().then((value) => {
+    void loadSelectorModeState().then((state) => {
       if (!cancelled) {
-        setEnabled(value);
+        setSelectorModeState(state);
       }
     });
 
-    const handleStorageChange = (
-      changes: StorageChangeMap,
-      areaName: string,
-    ) => {
-      if (areaName !== "local" || !changes[SELECTOR_ENABLED_KEY]) {
-        return;
-      }
-
-      setEnabled(changes[SELECTOR_ENABLED_KEY].newValue === true);
-    };
-
-    browser.storage.onChanged.addListener(handleStorageChange);
+    const unsubscribe = subscribeToSelectorModeState((state) => {
+      setSelectorModeState((currentState) => {
+        return {
+          ...currentState,
+          ...state,
+        };
+      });
+    });
 
     return () => {
       cancelled = true;
-      browser.storage.onChanged.removeListener(handleStorageChange);
+      unsubscribe();
     };
   }, []);
 
   const updateSelectorMode = async (nextEnabled: boolean) => {
     setIsSaving(true);
+    setActivationError(null);
     try {
-      await setSelectorEnabled(nextEnabled);
-      setEnabled(nextEnabled);
+      if (nextEnabled) {
+        await enableSelectorMode();
+      } else {
+        await disableSelectorMode();
+      }
+    } catch (error) {
+      setActivationError(
+        error instanceof Error
+          ? error.message
+          : "Unable to activate selector mode on this tab.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -73,28 +77,56 @@ function App() {
             status
           </p>
           <p className="mt-3 font-body text-sm leading-6 text-white">
-            {enabled ? "enabled" : "disabled"}
+            {selectorModeState.enabled ? "enabled" : "disabled"}
           </p>
         </div>
+
+        <div className="rounded-2xl border border-white/12 bg-white/4 p-4">
+          <p className="font-body text-[10px] uppercase tracking-[0.22em] text-white/45">
+            mcp bridge
+          </p>
+          <div className="mt-3 flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className={`h-2.5 w-2.5 rounded-full ${
+                selectorModeState.bridgeConnected ? "bg-emerald-300" : "bg-rose-300"
+              }`}
+            />
+            <p className="font-body text-sm leading-6 text-white">
+              {selectorModeState.bridgeConnected ? "connected" : "disconnected"}
+            </p>
+          </div>
+        </div>
+
+        {activationError ? (
+          <div className="rounded-2xl border border-rose-200/20 bg-rose-50/6 p-4">
+            <p className="font-body text-[10px] uppercase tracking-[0.22em] text-rose-200/70">
+              selector note
+            </p>
+            <p className="mt-3 font-body text-sm leading-6 text-rose-100">
+              {activationError}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Button
           aria-label="Enable selector mode"
           className="w-full border-white bg-white text-black shadow-none hover:bg-white/92"
-          disabled={enabled || isSaving}
+          disabled={selectorModeState.enabled || isSaving}
           onClick={() => void updateSelectorMode(true)}
         >
-          {isSaving && !enabled ? "..." : "enable"}
+          {isSaving && !selectorModeState.enabled ? "..." : "enable"}
         </Button>
         <Button
           aria-label="Disable selector mode"
           className="w-full border-white/22 bg-transparent text-white shadow-none hover:border-white hover:bg-white/8"
-          disabled={!enabled || isSaving}
+          disabled={!selectorModeState.enabled || isSaving}
           onClick={() => void updateSelectorMode(false)}
           tone="ghost"
         >
-          {isSaving && enabled ? "..." : "disable"}
+          {isSaving && selectorModeState.enabled ? "..." : "disable"}
         </Button>
       </div>
     </main>
