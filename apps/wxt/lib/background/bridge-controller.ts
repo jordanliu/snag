@@ -12,8 +12,13 @@ import {
   type ClearPageSelectionRuntimeMessage,
 } from "../selection-messages";
 import { setBridgeConnected } from "../selector-mode";
+import {
+  BRIDGE_HOST_KEY,
+  BRIDGE_PORT_KEY,
+  buildBridgeUrl,
+  getBridgeConfig,
+} from "../bridge-config";
 
-const BRIDGE_URL = "ws://127.0.0.1:57821";
 const RECONNECT_DELAY_MS = 1_500;
 
 type ActiveSelection = {
@@ -46,16 +51,18 @@ class BridgeController {
   private socket: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private activeSelection: ActiveSelection | null = null;
+  private bridgeUrl = "";
 
   start() {
     void setBridgeConnected(false);
 
     browser.runtime.onInstalled.addListener(this.handleInstalled);
     browser.runtime.onMessage.addListener(this.handleRuntimeMessage);
+    browser.storage.onChanged.addListener(this.handleStorageChange);
     browser.tabs.onRemoved.addListener(this.handleTabRemoved);
     browser.tabs.onUpdated.addListener(this.handleTabUpdated);
 
-    this.connectBridge();
+    void this.connectBridge();
   }
 
   private readonly handleInstalled = (details: InstalledDetails) => {
@@ -67,6 +74,20 @@ class BridgeController {
       selectorEnabled: false,
       bridgeConnected: false,
     });
+  };
+
+  private readonly handleStorageChange = (
+    changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
+    areaName: string,
+  ) => {
+    if (
+      areaName !== "local"
+      || (!changes[BRIDGE_HOST_KEY] && !changes[BRIDGE_PORT_KEY])
+    ) {
+      return;
+    }
+
+    void this.restartBridgeConnection();
   };
 
   private readonly handleRuntimeMessage = (
@@ -136,7 +157,7 @@ class BridgeController {
     }
   };
 
-  private connectBridge() {
+  private async connectBridge() {
     if (
       this.socket
       && (this.socket.readyState === WebSocket.OPEN
@@ -145,11 +166,15 @@ class BridgeController {
       return;
     }
 
-    const nextSocket = new WebSocket(BRIDGE_URL);
+    const config = await getBridgeConfig();
+    const bridgeUrl = buildBridgeUrl(config);
+    this.bridgeUrl = bridgeUrl;
+
+    const nextSocket = new WebSocket(bridgeUrl);
     this.socket = nextSocket;
 
     nextSocket.addEventListener("open", () => {
-      console.log(`Connected to MCP bridge at ${BRIDGE_URL}`);
+      console.log(`Connected to MCP bridge at ${bridgeUrl}`);
       void setBridgeConnected(true);
 
       if (!this.activeSelection) {
@@ -204,8 +229,35 @@ class BridgeController {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.connectBridge();
+      void this.connectBridge();
     }, RECONNECT_DELAY_MS);
+  }
+
+  private async restartBridgeConnection() {
+    this.clearReconnectTimer();
+    void setBridgeConnected(false);
+
+    const previousSocket = this.socket;
+    this.socket = null;
+
+    if (
+      previousSocket
+      && (previousSocket.readyState === WebSocket.OPEN
+        || previousSocket.readyState === WebSocket.CONNECTING)
+    ) {
+      previousSocket.close(1000, "Restarting MCP bridge connection.");
+    }
+
+    await this.connectBridge();
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer === null) {
+      return;
+    }
+
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   private sendBridgeMessage(message: BridgeMessage) {

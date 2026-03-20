@@ -6,6 +6,11 @@ import {
   setSelectorEnabled,
 } from "../selector-mode";
 import { selectorSessionStatusMessageSchema } from "../selection-messages";
+import {
+  type BridgeConfig,
+  getBridgeConfig,
+  setBridgeConfig,
+} from "../bridge-config";
 
 type StorageChangeMap = Record<
   string,
@@ -18,23 +23,28 @@ type StorageChangeMap = Record<
 export type SelectorModeState = {
   enabled: boolean;
   bridgeConnected: boolean;
+  bridgeHost: string;
+  bridgePort: string;
 };
 
 const UNSUPPORTED_TAB_ERROR =
   "Selector mode only works on regular http or https pages, not browser or extension pages.";
 const MISSING_TAB_ERROR = "Open a normal webpage tab before enabling selector mode.";
-const RELOAD_REQUIRED_ERROR =
-  "Reload this page once after loading or updating the extension, then enable selector mode again.";
+const SELECTOR_ACTIVATION_ERROR =
+  "Unable to activate selector mode on this tab right now. Try enabling it again.";
 
 export async function loadSelectorModeState(): Promise<SelectorModeState> {
-  const [enabled, bridgeConnected] = await Promise.all([
+  const [enabled, bridgeConnected, bridgeConfig] = await Promise.all([
     getSelectorEnabled(),
     getBridgeConnected(),
+    getBridgeConfig(),
   ]);
 
   return {
     enabled,
     bridgeConnected,
+    bridgeHost: bridgeConfig.host,
+    bridgePort: String(bridgeConfig.port),
   };
 }
 
@@ -70,12 +80,36 @@ export function subscribeToSelectorModeState(
 
 export async function enableSelectorMode(): Promise<void> {
   const activeTab = await getSupportedActiveTab();
-  await assertSelectorSessionReady(activeTab.id);
+  await injectSelectorContentScript(activeTab.id);
   await setSelectorEnabled(true);
 }
 
 export async function disableSelectorMode(): Promise<void> {
   await setSelectorEnabled(false);
+}
+
+export async function saveBridgeConfig(input: {
+  host: string;
+  port: string;
+}): Promise<BridgeConfig> {
+  const host = input.host.trim();
+  const parsedPort = Number(input.port);
+
+  if (host.length === 0) {
+    throw new Error("Enter a bridge host before saving.");
+  }
+
+  if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65_535) {
+    throw new Error("Enter a valid bridge port between 1 and 65535.");
+  }
+
+  const config = {
+    host,
+    port: parsedPort,
+  };
+
+  await setBridgeConfig(config);
+  return config;
 }
 
 async function getSupportedActiveTab(): Promise<{ id: number; url: string }> {
@@ -98,17 +132,16 @@ async function getSupportedActiveTab(): Promise<{ id: number; url: string }> {
   };
 }
 
-async function assertSelectorSessionReady(tabId: number): Promise<void> {
+async function injectSelectorContentScript(tabId: number): Promise<void> {
   try {
-    const response = await browser.tabs.sendMessage(tabId, {
-      type: "selector_session_probe",
+    await browser.scripting.executeScript({
+      target: {
+        tabId,
+        allFrames: true,
+      },
+      files: ["/content-scripts/content.js"],
     });
-    const parsed = selectorSessionStatusMessageSchema.safeParse(response);
-
-    if (!parsed.success || parsed.data.ready !== true) {
-      throw new Error(RELOAD_REQUIRED_ERROR);
-    }
   } catch {
-    throw new Error(RELOAD_REQUIRED_ERROR);
+    throw new Error(SELECTOR_ACTIVATION_ERROR);
   }
 }

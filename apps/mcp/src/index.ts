@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerTools } from "./tools/register-tools.js";
 import { WebSocketBridge } from "./bridge/websocket-bridge.js";
+import { logError } from "./logger.js";
 
 const bridge = new WebSocketBridge();
 const server = new McpServer({
@@ -30,7 +31,7 @@ async function main() {
 }
 
 main().catch(async (error: unknown) => {
-  console.error("Failed to start dom-mcp:", error);
+  logError("Failed to start dom-mcp:", error);
   await Promise.allSettled([server.close(), bridge.close()]);
   process.exit(1);
 });

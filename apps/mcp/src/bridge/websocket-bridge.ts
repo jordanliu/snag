@@ -6,9 +6,11 @@ import {
   type SelectedElementSnapshot,
 } from "@repo/dom-bridge";
 import { WebSocket, WebSocketServer } from "ws";
+import {
+  logError,
+  logInfo,
+} from "../logger.js";
 
-const BRIDGE_HOST = "127.0.0.1";
-const BRIDGE_PORT = 57821;
 const COMMAND_TIMEOUT_MS = 5_000;
 
 type ActiveSelection = {
@@ -29,6 +31,8 @@ export class WebSocketBridge {
   private activeClient: WebSocket | null = null;
   private latestSelection: ActiveSelection | null = null;
   private pendingCommands = new Map<string, PendingCommand>();
+  private readonly host = getBridgeHost();
+  private readonly port = getBridgePort();
 
   async start(): Promise<void> {
     if (this.server && this.socketServer) {
@@ -39,11 +43,11 @@ export class WebSocketBridge {
     const socketServer = new WebSocketServer({ server });
 
     socketServer.on("error", (error) => {
-      console.error("Bridge websocket server error:", error);
+      logError("Bridge websocket server error:", error);
     });
 
     socketServer.on("connection", (client) => {
-      console.log(`Extension bridge connected at ws://${BRIDGE_HOST}:${BRIDGE_PORT}`);
+      logInfo(`Extension bridge connected at ws://${this.host}:${this.port}`);
       this.attachClient(client);
     });
 
@@ -60,10 +64,10 @@ export class WebSocketBridge {
 
       server.once("error", handleError);
       server.once("listening", handleListening);
-      server.listen(BRIDGE_PORT, BRIDGE_HOST);
+      server.listen(this.port, this.host);
     });
 
-    console.log(`DOM bridge listening on ws://${BRIDGE_HOST}:${BRIDGE_PORT}`);
+    logInfo(`DOM bridge listening on ws://${this.host}:${this.port}`);
 
     this.server = server;
     this.socketServer = socketServer;
@@ -133,7 +137,7 @@ export class WebSocketBridge {
         timeout,
       });
 
-      console.log("Sending DOM command to extension:", summarizeCommand(command));
+      logInfo("Sending DOM command to extension:", summarizeCommand(command));
 
       client.send(JSON.stringify(command), (error) => {
         if (!error) {
@@ -161,7 +165,7 @@ export class WebSocketBridge {
 
     client.on("message", (payload) => {
       this.handleClientMessage(payload).catch((error: unknown) => {
-        console.error("Failed to handle bridge message:", error);
+        logError("Failed to handle bridge message:", error);
       });
     });
 
@@ -170,7 +174,7 @@ export class WebSocketBridge {
         return;
       }
 
-      console.log("Extension bridge disconnected.");
+      logInfo("Extension bridge disconnected.");
       this.activeClient = null;
       this.latestSelection = null;
       this.rejectPendingCommands(
@@ -179,7 +183,7 @@ export class WebSocketBridge {
     });
 
     client.on("error", (error) => {
-      console.error("Bridge websocket error:", error);
+      logError("Bridge websocket error:", error);
     });
   }
 
@@ -191,7 +195,7 @@ export class WebSocketBridge {
     const parsed = bridgeIncomingMessageSchema.safeParse(rawMessage);
 
     if (!parsed.success) {
-      console.error("Ignoring invalid bridge payload:", parsed.error.flatten());
+      logError("Ignoring invalid bridge payload:", parsed.error.flatten());
       return;
     }
 
@@ -199,7 +203,7 @@ export class WebSocketBridge {
 
     switch (message.type) {
       case "selection_changed":
-        console.log("Received selected element from extension:", {
+        logInfo("Received selected element from extension:", {
           selector: message.snapshot.selector,
           tagName: message.snapshot.tagName,
           tabId: message.tabId,
@@ -214,7 +218,7 @@ export class WebSocketBridge {
         return;
 
       case "selection_cleared":
-        console.log("Received selection cleared from extension:", {
+        logInfo("Received selection cleared from extension:", {
           reason: message.reason,
           tabId: message.tabId,
           frameId: message.frameId,
@@ -224,7 +228,7 @@ export class WebSocketBridge {
         return;
 
       case "command_result": {
-        console.log("Received command result from extension:", {
+        logInfo("Received command result from extension:", {
           id: message.id,
           ok: message.ok,
           selector: message.selector,
@@ -257,6 +261,20 @@ export class WebSocketBridge {
       this.pendingCommands.delete(commandId);
     }
   }
+}
+
+function getBridgeHost(): string {
+  const configuredHost = process.env.DOM_BRIDGE_HOST?.trim();
+  return configuredHost && configuredHost.length > 0 ? configuredHost : "127.0.0.1";
+}
+
+function getBridgePort(): number {
+  const configuredPort = Number(process.env.DOM_BRIDGE_PORT);
+  if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 65_535) {
+    return 57821;
+  }
+
+  return configuredPort;
 }
 
 export function formatSelectionSummary(snapshot: SelectedElementSnapshot): string {
